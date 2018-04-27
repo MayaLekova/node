@@ -294,8 +294,8 @@ def JS2C(source, target):
         split = split[1:]
       name = '/'.join(split)
 
-    # Convert gypi to json. This means line number will not match up to the
-    # original file, but is equired to properly escape strings.
+    # Convert gypi to json. This means line numbers will not match up to the
+    # original file, but it is required to properly escape strings.
     if name.endswith(".gypi"):
       obj = ast.literal_eval(lines)
       lines = json.dumps(obj, indent=2)
