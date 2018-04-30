@@ -118,6 +118,9 @@ PPERF_COUNTERSET_INSTANCE perfctr_instance;
 
 namespace node {
 
+
+HANDLE NodeCounterProvider = nullptr;
+
 void InitPerfCountersWin32() {
   ULONG status;
   PERF_PROVIDER_CONTEXT providerContext;
