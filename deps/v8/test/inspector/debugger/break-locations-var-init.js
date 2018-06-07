@@ -21,7 +21,7 @@ function testFunction() {
   }
   var b = obj1.a;
   (async function asyncF() {
-    let r = await Promise.resolve(42);
+    let r = await Promise.resolve(42).then(x => x);
     return r;
   })();
   return promise;

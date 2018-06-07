@@ -30,16 +30,23 @@ Node* AsyncBuiltinsAssembler::Await(
   DCHECK_GE(context_length, Context::MIN_CONTEXT_SLOTS);
 
   Node* const native_context = LoadNativeContext(context);
+  Node* const promise_fun =
+      LoadContextElement(native_context, Context::PROMISE_FUNCTION_INDEX);
+  CSA_ASSERT(this, IsFunctionWithPrototypeSlotMap(LoadMap(promise_fun)));
+  CSA_ASSERT(this, IsConstructor(promise_fun));
 
-  static const int kWrappedPromiseOffset = FixedArray::SizeFor(context_length);
   static const int kThrowawayPromiseOffset =
-      kWrappedPromiseOffset + JSPromise::kSizeWithEmbedderFields;
+      FixedArray::SizeFor(context_length);
   static const int kResolveClosureOffset =
       kThrowawayPromiseOffset + JSPromise::kSizeWithEmbedderFields;
   static const int kRejectClosureOffset =
       kResolveClosureOffset + JSFunction::kSizeWithoutPrototype;
   static const int kTotalSize =
       kRejectClosureOffset + JSFunction::kSizeWithoutPrototype;
+
+  // 2. Let promise be ? PromiseResolve(« promise »).
+  Node* const promise =
+      CallBuiltin(Builtins::kPromiseResolve, context, promise_fun, value);
 
   Node* const base = AllocateInNewSpace(kTotalSize);
   Node* const closure_context = base;
@@ -49,10 +56,6 @@ Node* AsyncBuiltinsAssembler::Await(
     init_closure_context(closure_context);
   }
 
-  // Let promiseCapability be ! NewPromiseCapability(%Promise%).
-  Node* const promise_fun =
-      LoadContextElement(native_context, Context::PROMISE_FUNCTION_INDEX);
-  CSA_ASSERT(this, IsFunctionWithPrototypeSlotMap(LoadMap(promise_fun)));
   Node* const promise_map =
       LoadObjectField(promise_fun, JSFunction::kPrototypeOrInitialMapOffset);
   // Assert that the JSPromise map has an instance size is
@@ -60,16 +63,6 @@ Node* AsyncBuiltinsAssembler::Await(
   CSA_ASSERT(this, WordEqual(LoadMapInstanceSizeInWords(promise_map),
                              IntPtrConstant(JSPromise::kSizeWithEmbedderFields /
                                             kPointerSize)));
-  Node* const wrapped_value = InnerAllocate(base, kWrappedPromiseOffset);
-  {
-    // Initialize Promise
-    StoreMapNoWriteBarrier(wrapped_value, promise_map);
-    InitializeJSObjectFromMap(
-        wrapped_value, promise_map,
-        IntPtrConstant(JSPromise::kSizeWithEmbedderFields));
-    PromiseInit(wrapped_value);
-  }
-
   Node* const throwaway = InnerAllocate(base, kThrowawayPromiseOffset);
   {
     // Initialize throwawayPromise
@@ -98,15 +91,10 @@ Node* AsyncBuiltinsAssembler::Await(
     // Add PromiseHooks if needed
     Label next(this);
     GotoIfNot(IsPromiseHookEnabledOrDebugIsActive(), &next);
-    CallRuntime(Runtime::kPromiseHookInit, context, wrapped_value,
-                outer_promise);
-    CallRuntime(Runtime::kPromiseHookInit, context, throwaway, wrapped_value);
+    CallRuntime(Runtime::kPromiseHookInit, context, throwaway, promise);
     Goto(&next);
     BIND(&next);
   }
-
-  // Perform ! Call(promiseCapability.[[Resolve]], undefined, « promise »).
-  CallBuiltin(Builtins::kResolvePromise, context, wrapped_value, value);
 
   // The Promise will be thrown away and not handled, but it shouldn't trigger
   // unhandled reject events as its work is done
@@ -143,7 +131,7 @@ Node* AsyncBuiltinsAssembler::Await(
 
   Goto(&do_perform_promise_then);
   BIND(&do_perform_promise_then);
-  return CallBuiltin(Builtins::kPerformPromiseThen, context, wrapped_value,
+  return CallBuiltin(Builtins::kPerformPromiseThen, native_context, promise,
                      on_resolve, on_reject, throwaway);
 }
 
